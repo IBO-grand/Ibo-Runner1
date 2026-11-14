@@ -1,0 +1,133 @@
+
+name: Build IBO Runner IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check HTML
+        run: |
+          test -f index.html || {
+            echo "index.html tapilmadi!"
+            exit 1
+          }
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Create iOS project
+        run: |
+          mkdir -p Sources
+
+          cat > Sources/IBORunnerApp.swift <<'EOF'
+          import SwiftUI
+
+          @main
+          struct IBORunnerApp: App {
+              var body: some Scene {
+                  WindowGroup {
+                      ContentView()
+                  }
+              }
+          }
+          EOF
+
+          cat > Sources/ContentView.swift <<'EOF'
+          import SwiftUI
+          import WebKit
+
+          struct ContentView: View {
+              var body: some View {
+                  WebView()
+                      .ignoresSafeArea()
+                      .statusBarHidden(true)
+              }
+          }
+
+          struct WebView: UIViewRepresentable {
+              func makeUIView(context: Context) -> WKWebView {
+                  let webView = WKWebView()
+                  webView.scrollView.bounces = false
+                  webView.isOpaque = false
+                  webView.backgroundColor = .black
+
+                  if let url = Bundle.main.url(
+                      forResource: "index",
+                      withExtension: "html"
+                  ) {
+                      webView.loadFileURL(
+                          url,
+                          allowingReadAccessTo: url.deletingLastPathComponent()
+                      )
+                  }
+
+                  return webView
+              }
+
+              func updateUIView(_ webView: WKWebView, context: Context) {}
+          }
+          EOF
+
+          cat > project.yml <<'EOF'
+          name: IBORunner
+          options:
+            bundleIdPrefix: com.ibostudio
+            deploymentTarget:
+              iOS: "15.0"
+
+          targets:
+            IBORunner:
+              type: application
+              platform: iOS
+              sources:
+                - path: Sources
+              resources:
+                - path: index.html
+              settings:
+                base:
+                  PRODUCT_BUNDLE_IDENTIFIER: com.ibostudio.iborunner
+                  PRODUCT_NAME: IBORunner
+                  INFOPLIST_KEY_CFBundleDisplayName: IBO Runner
+                  GENERATE_INFOPLIST_FILE: YES
+                  SWIFT_VERSION: "5.0"
+                  TARGETED_DEVICE_FAMILY: "1,2"
+          EOF
+
+          xcodegen generate
+
+      - name: Build iOS app
+        run: |
+          xcodebuild \
+            -project IBORunner.xcodeproj \
+            -scheme IBORunner \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Package IPA
+        run: |
+          APP="build/Build/Products/Release-iphoneos/IBORunner.app"
+          test -d "$APP"
+
+          mkdir -p ipa/Payload
+          cp -R "$APP" ipa/Payload/IBORunner.app
+
+          cd ipa
+          zip -qry "$GITHUB_WORKSPACE/IBO-Runner.ipa" Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: IBO-Runner-IPA
+          path: IBO-Runner.ipa
