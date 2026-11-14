@@ -1,0 +1,41 @@
+name: Build Unsigned iOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build-ipa:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Archive iOS App (unsigned arm64)
+        run: |
+          xcodebuild archive \
+            -project IboRunner.xcodeproj \
+            -scheme IboRunner \
+            -sdk iphoneos \
+            -configuration Release \
+            -archivePath build/IboRunner.xcarchive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Package .ipa Payload
+        run: |
+          mkdir -p build/Payload
+          cp -r build/IboRunner.xcarchive/Products/Applications/IboRunner.app build/Payload/
+          cd build
+          zip -qry IboRunner-unsigned.ipa Payload
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: IboRunner-ipa
+          path: build/IboRunner-unsigned.ipa
